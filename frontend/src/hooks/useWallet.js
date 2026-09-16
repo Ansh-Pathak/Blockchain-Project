@@ -70,5 +70,36 @@ export function useWallet() {
 
   const isWrongNetwork = chainId !== null && chainId !== EXPECTED_CHAIN_ID;
 
-  return { address, chainId, provider, error, connect, isWrongNetwork };
+  // Lets the user fix a wrong-network situation with one click instead of
+  // manually digging through MetaMask's network settings mid-demo.
+  // wallet_switchEthereumChain asks MetaMask to switch; if it doesn't know
+  // this network yet, MetaMask throws error code 4902, and we fall back to
+  // wallet_addEthereumChain to add it, then switch.
+  const switchToExpectedNetwork = useCallback(async () => {
+    if (!window.ethereum) return;
+    const chainIdHex = "0x" + EXPECTED_CHAIN_ID.toString(16);
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainIdHex }],
+      });
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: chainIdHex,
+            chainName: "Hardhat Local",
+            rpcUrls: ["http://127.0.0.1:8545"],
+            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          }],
+        });
+      } else {
+        setError(switchError.message || "Failed to switch network");
+      }
+    }
+  }, []);
+
+  return { address, chainId, provider, error, connect, isWrongNetwork, switchToExpectedNetwork };
 }

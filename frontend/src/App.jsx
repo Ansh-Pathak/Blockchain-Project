@@ -8,7 +8,7 @@ import { GovernancePanel } from "./components/GovernancePanel";
 import "./App.css";
 
 function App() {
-  const { address, provider, error, connect, isWrongNetwork } = useWallet();
+  const { address, provider, error, connect, isWrongNetwork, switchToExpectedNetwork } = useWallet();
 
   return (
     <div className="app">
@@ -27,7 +27,8 @@ function App() {
 
       {isWrongNetwork && (
         <p className="error">
-          Wrong network - please switch MetaMask to the local Hardhat network (chain ID 1337).
+          Wrong network - MetaMask needs to be on the local Hardhat network (chain ID 1337).{" "}
+          <button onClick={switchToExpectedNetwork}>Switch Network</button>
         </p>
       )}
 
@@ -48,9 +49,23 @@ function App() {
 function MainContent({ provider, address }) {
   const [signer, setSigner] = useState(null);
 
+  // IMPORTANT: `address` must be in this dependency array, not just
+  // `provider`. The BrowserProvider object itself doesn't change when you
+  // switch accounts in MetaMask - only the active address does. Without
+  // `address` here, switching from e.g. the patient account to the
+  // therapist account would silently keep sending transactions as the OLD
+  // account until the page was refreshed. Re-running this effect whenever
+  // address changes keeps the signer (and therefore every panel) in sync
+  // with whichever account is actually selected in MetaMask.
   useEffect(() => {
-    provider.getSigner().then(setSigner);
-  }, [provider]);
+    let cancelled = false;
+    provider.getSigner().then((s) => {
+      if (!cancelled) setSigner(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, address]);
 
   if (!signer) return <p>Loading signer...</p>;
 

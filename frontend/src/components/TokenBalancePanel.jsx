@@ -9,6 +9,21 @@ export function TokenBalancePanel({ provider, address }) {
   useEffect(() => {
     if (!contract || !address) return;
     refresh();
+
+    // ERC20's standard Transfer event fires on every mint/transfer. If it
+    // involves our address (as sender or receiver), refresh the balance -
+    // this is what makes the balance update live right after a session is
+    // confirmed, with no manual refresh needed.
+    const onTransfer = (from, to) => {
+      if (from.toLowerCase() === address.toLowerCase() || to.toLowerCase() === address.toLowerCase()) {
+        refresh();
+      }
+    };
+    contract.on("Transfer", onTransfer);
+
+    return () => {
+      contract.off("Transfer", onTransfer);
+    };
   }, [contract, address]);
 
   async function refresh() {
@@ -23,7 +38,6 @@ export function TokenBalancePanel({ provider, address }) {
     <div className="panel">
       <h2>MIND Token Balance</h2>
       <p className="big-number">{balance} MIND</p>
-      <button onClick={refresh}>Refresh</button>
     </div>
   );
 }

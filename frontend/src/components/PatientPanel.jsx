@@ -8,12 +8,29 @@ export function PatientPanel({ signer, address }) {
   const [journalText, setJournalText] = useState("");
   const [entryCount, setEntryCount] = useState(0);
   const [status, setStatus] = useState("");
+  const [isPending, setIsPending] = useState(false);
 
-  // Re-check registration status whenever the contract or address changes
-  // (e.g. right after connecting, or after the user registers).
   useEffect(() => {
     if (!contract || !address) return;
     refreshStatus();
+
+    // Listen for the contract's own events instead of only refreshing after
+    // our own transactions. This means if you have the app open in two
+    // browser tabs (one per role) or run demo-seed.js while it's open, the
+    // UI updates live without any manual refresh.
+    const onRegistered = (registeredAddress) => {
+      if (registeredAddress.toLowerCase() === address.toLowerCase()) refreshStatus();
+    };
+    const onEntryLogged = (loggedAddress) => {
+      if (loggedAddress.toLowerCase() === address.toLowerCase()) refreshStatus();
+    };
+    contract.on("PatientRegistered", onRegistered);
+    contract.on("JournalEntryLogged", onEntryLogged);
+
+    return () => {
+      contract.off("PatientRegistered", onRegistered);
+      contract.off("JournalEntryLogged", onEntryLogged);
+    };
   }, [contract, address]);
 
   async function refreshStatus() {
@@ -26,19 +43,22 @@ export function PatientPanel({ signer, address }) {
   }
 
   async function handleRegister() {
+    setIsPending(true);
     setStatus("Sending transaction... confirm in MetaMask");
     try {
       const tx = await contract.registerAsPatient();
-      await tx.wait(); // wait for the transaction to be mined
+      await tx.wait();
       setStatus("Registered!");
-      await refreshStatus();
     } catch (err) {
       setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setIsPending(false);
     }
   }
 
   async function handleLogEntry() {
     if (!journalText.trim()) return;
+    setIsPending(true);
     setStatus("Logging entry... confirm in MetaMask");
     try {
       // We never send the journal text itself to the blockchain - only its
@@ -50,9 +70,10 @@ export function PatientPanel({ signer, address }) {
       await tx.wait();
       setJournalText("");
       setStatus("Journal entry logged!");
-      await refreshStatus();
     } catch (err) {
       setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setIsPending(false);
     }
   }
 
@@ -60,7 +81,9 @@ export function PatientPanel({ signer, address }) {
     <div className="panel">
       <h2>Patient</h2>
       {!isRegistered ? (
-        <button onClick={handleRegister}>Register as Patient</button>
+        <button disabled={isPending} onClick={handleRegister}>
+          {isPending ? "Confirming..." : "Register as Patient"}
+        </button>
       ) : (
         <>
           <p>✅ Registered. Journal entries logged: {entryCount}</p>
@@ -68,8 +91,11 @@ export function PatientPanel({ signer, address }) {
             placeholder="Write a journal entry (only its hash is stored on-chain)"
             value={journalText}
             onChange={(e) => setJournalText(e.target.value)}
+            disabled={isPending}
           />
-          <button onClick={handleLogEntry}>Log Journal Entry</button>
+          <button disabled={isPending || !journalText.trim()} onClick={handleLogEntry}>
+            {isPending ? "Confirming..." : "Log Journal Entry"}
+          </button>
         </>
       )}
       {status && <p className="status">{status}</p>}

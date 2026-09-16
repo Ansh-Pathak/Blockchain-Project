@@ -11,10 +11,26 @@ export function TherapistPanel({ signer, address }) {
   const [credentialText, setCredentialText] = useState("");
   const [approveAddress, setApproveAddress] = useState("");
   const [status, setStatus] = useState("");
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     if (!contract || !address) return;
     refresh();
+
+    // Live updates: if an admin approves/rejects in another tab/account,
+    // this panel reflects it immediately without a manual refresh.
+    const onApplied = () => refresh();
+    const onApproved = () => refresh();
+    const onRejected = () => refresh();
+    contract.on("TherapistApplied", onApplied);
+    contract.on("TherapistApproved", onApproved);
+    contract.on("TherapistRejected", onRejected);
+
+    return () => {
+      contract.off("TherapistApplied", onApplied);
+      contract.off("TherapistApproved", onApproved);
+      contract.off("TherapistRejected", onRejected);
+    };
   }, [contract, address]);
 
   async function refresh() {
@@ -27,19 +43,23 @@ export function TherapistPanel({ signer, address }) {
 
   async function handleApply() {
     if (!credentialText.trim()) return;
+    setIsPending(true);
     setStatus("Applying... confirm in MetaMask");
     try {
       const credentialHash = keccak256(toUtf8Bytes(credentialText));
       const tx = await contract.applyAsTherapist(credentialHash);
       await tx.wait();
       setStatus("Application submitted!");
-      await refresh();
     } catch (err) {
       setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setIsPending(false);
     }
   }
 
   async function handleApprove() {
+    if (!approveAddress.trim()) return;
+    setIsPending(true);
     setStatus("Approving... confirm in MetaMask");
     try {
       const tx = await contract.approveTherapist(approveAddress);
@@ -47,10 +67,14 @@ export function TherapistPanel({ signer, address }) {
       setStatus(`Approved ${approveAddress}`);
     } catch (err) {
       setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setIsPending(false);
     }
   }
 
   async function handleReject() {
+    if (!approveAddress.trim()) return;
+    setIsPending(true);
     setStatus("Rejecting... confirm in MetaMask");
     try {
       const tx = await contract.rejectTherapist(approveAddress);
@@ -58,6 +82,8 @@ export function TherapistPanel({ signer, address }) {
       setStatus(`Rejected ${approveAddress}`);
     } catch (err) {
       setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setIsPending(false);
     }
   }
 
@@ -72,8 +98,11 @@ export function TherapistPanel({ signer, address }) {
             placeholder="Credential info (only its hash is stored on-chain)"
             value={credentialText}
             onChange={(e) => setCredentialText(e.target.value)}
+            disabled={isPending}
           />
-          <button onClick={handleApply}>Apply as Therapist</button>
+          <button disabled={isPending || !credentialText.trim()} onClick={handleApply}>
+            {isPending ? "Confirming..." : "Apply as Therapist"}
+          </button>
         </>
       )}
 
@@ -84,9 +113,10 @@ export function TherapistPanel({ signer, address }) {
             placeholder="Applicant wallet address (0x...)"
             value={approveAddress}
             onChange={(e) => setApproveAddress(e.target.value)}
+            disabled={isPending}
           />
-          <button onClick={handleApprove}>Approve</button>
-          <button onClick={handleReject}>Reject</button>
+          <button disabled={isPending} onClick={handleApprove}>Approve</button>
+          <button disabled={isPending} onClick={handleReject}>Reject</button>
         </div>
       )}
 

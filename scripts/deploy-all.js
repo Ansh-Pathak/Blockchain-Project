@@ -1,4 +1,6 @@
 const { ethers } = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -44,14 +46,22 @@ async function main() {
   console.log("MindChainGovernance deployed to:", await governance.getAddress());
 
   console.log("\n--- Deployment summary ---");
-  console.log({
+  const addresses = {
     TherapistRegistry: await therapistRegistry.getAddress(),
     PatientRegistry: await patientRegistry.getAddress(),
     RewardToken: await rewardToken.getAddress(),
     SessionEscrow: await sessionEscrow.getAddress(),
     MindChainGovernance: await governance.getAddress(),
-  });
-  console.log("\nSave these addresses - the frontend (Day 5-6) will need them.");
+  };
+  console.log(addresses);
+
+  // Write addresses to a shared JSON file so other scripts (demo-seed.js)
+  // and the frontend can both read the same source of truth instead of
+  // having addresses duplicated and potentially out of sync in multiple files.
+  const outputPath = path.join(__dirname, "..", "deployed-addresses.json");
+  fs.writeFileSync(outputPath, JSON.stringify(addresses, null, 2));
+  console.log(`\nAddresses written to ${outputPath}`);
+  console.log("Remember to also update frontend/src/contracts/addresses.js if these changed.");
 }
 
 main().catch((error) => {
