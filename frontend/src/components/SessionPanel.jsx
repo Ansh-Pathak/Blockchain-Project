@@ -40,23 +40,25 @@ export function SessionPanel({ signer, address }) {
     const all = [];
     for (let i = 0; i < Number(nextId); i++) {
       const s = await contract.sessions(i);
-      const patient = s[0];
-      const therapist = s[1];
-      const amount = s[2];
-      const status = s[3];
-      const createdAt = s[4];
+      // NOTE: ethers v6 returns struct data as a "Result" - an array-like
+      // object with both numeric AND named keys. Spreading it directly
+      // (`{ ...s }`) is unreliable and caused a runtime crash during
+      // testing. Reading each field explicitly by tuple index (matching
+      // the struct's declaration order in SessionEscrow.sol: patient,
+      // therapist, amount, status, createdAt) is the safe, explicit way.
+      const session = {
+        id: i,
+        patient: s[0],
+        therapist: s[1],
+        amount: s[2],
+        status: s[3],
+        createdAt: s[4],
+      };
       if (
-        patient.toLowerCase() === address?.toLowerCase() ||
-        therapist.toLowerCase() === address?.toLowerCase()
+        session.patient.toLowerCase() === address?.toLowerCase() ||
+        session.therapist.toLowerCase() === address?.toLowerCase()
       ) {
-        all.push({
-          id: i,
-          patient,
-          therapist,
-          amount,
-          status,
-          createdAt,
-        });
+        all.push(session);
       }
     }
     setSessions(all);

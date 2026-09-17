@@ -38,6 +38,11 @@ export function GovernancePanel({ signer, address }) {
     for (let i = 0; i < Number(nextId); i++) {
       const p = await contract.proposals(i);
       const voted = address ? await contract.hasVoted(i, address) : false;
+      // Same note as SessionPanel: read struct fields by explicit tuple
+      // index (matching MindChainGovernance.sol's declaration order:
+      // proposer, description, votesFor, votesAgainst, votingDeadline,
+      // state) rather than spreading the ethers Result object directly,
+      // which caused a runtime crash during testing.
       all.push({
         id: i,
         proposer: p[0],
@@ -46,7 +51,8 @@ export function GovernancePanel({ signer, address }) {
         votesAgainst: p[3],
         votingDeadline: p[4],
         state: p[5],
-        voted,});
+        voted,
+      });
     }
     setProposals(all);
   }
