@@ -13,6 +13,7 @@ const contracts = [
   "RewardToken",
   "SessionEscrow",
   "MindChainGovernance",
+  "AnonymousPatientRegistry",
 ];
 
 let output = "// Auto-generated from Hardhat compile artifacts.\n";

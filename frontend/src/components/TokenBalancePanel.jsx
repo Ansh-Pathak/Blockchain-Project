@@ -1,10 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { formatEther } from "ethers";
 import { useContract } from "../contracts/useContract";
 
 export function TokenBalancePanel({ provider, address }) {
   const contract = useContract("RewardToken", provider);
   const [balance, setBalance] = useState("0");
+
+  const refresh = useCallback(async () => {
+    if (!contract || !address) return;
+    try {
+      const raw = await contract.balanceOf(address);
+      setBalance(formatEther(raw));
+    } catch (err) {
+      console.error("Error refreshing token balance:", err);
+    }
+  }, [contract, address]);
 
   useEffect(() => {
     if (!contract || !address) return;
@@ -24,15 +34,7 @@ export function TokenBalancePanel({ provider, address }) {
     return () => {
       contract.off("Transfer", onTransfer);
     };
-  }, [contract, address]);
-
-  async function refresh() {
-    const raw = await contract.balanceOf(address);
-    // ERC20 balances are stored with 18 decimal places internally (like
-    // storing cents instead of dollars). formatEther converts that back to
-    // a normal human-readable number.
-    setBalance(formatEther(raw));
-  }
+  }, [contract, address, refresh]);
 
   return (
     <div className="panel">

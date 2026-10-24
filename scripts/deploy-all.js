@@ -45,6 +45,37 @@ async function main() {
   await governance.waitForDeployment();
   console.log("MindChainGovernance deployed to:", await governance.getAddress());
 
+  // 7. SemaphoreVerifier - the ZK proof verifier used by Semaphore
+  const SemaphoreVerifier = await ethers.getContractFactory("SemaphoreVerifier");
+  const semaphoreVerifier = await SemaphoreVerifier.deploy();
+  await semaphoreVerifier.waitForDeployment();
+  console.log("SemaphoreVerifier deployed to:", await semaphoreVerifier.getAddress());
+
+  // 8. PoseidonT3 - external hash library required by Semaphore's LeanIMT Merkle tree
+  const PoseidonT3 = await ethers.getContractFactory("PoseidonT3");
+  const poseidonT3 = await PoseidonT3.deploy();
+  await poseidonT3.waitForDeployment();
+  console.log("PoseidonT3 deployed to:", await poseidonT3.getAddress());
+
+  // 9. Semaphore - the core protocol contract (linked to PoseidonT3)
+  const Semaphore = await ethers.getContractFactory("Semaphore", {
+    libraries: {
+      PoseidonT3: await poseidonT3.getAddress(),
+    },
+  });
+  const semaphore = await Semaphore.deploy(await semaphoreVerifier.getAddress());
+  await semaphore.waitForDeployment();
+  console.log("Semaphore deployed to:", await semaphore.getAddress());
+
+  // 9. AnonymousPatientRegistry - uses Semaphore for ZK group membership + PatientRegistry as sybil gate
+  const AnonymousPatientRegistry = await ethers.getContractFactory("AnonymousPatientRegistry");
+  const anonymousPatientRegistry = await AnonymousPatientRegistry.deploy(
+    await semaphore.getAddress(),
+    await patientRegistry.getAddress()
+  );
+  await anonymousPatientRegistry.waitForDeployment();
+  console.log("AnonymousPatientRegistry deployed to:", await anonymousPatientRegistry.getAddress());
+
   console.log("\n--- Deployment summary ---");
   const addresses = {
     TherapistRegistry: await therapistRegistry.getAddress(),
@@ -52,6 +83,9 @@ async function main() {
     RewardToken: await rewardToken.getAddress(),
     SessionEscrow: await sessionEscrow.getAddress(),
     MindChainGovernance: await governance.getAddress(),
+    SemaphoreVerifier: await semaphoreVerifier.getAddress(),
+    Semaphore: await semaphore.getAddress(),
+    AnonymousPatientRegistry: await anonymousPatientRegistry.getAddress(),
   };
   console.log(addresses);
 
@@ -62,6 +96,16 @@ async function main() {
   fs.writeFileSync(outputPath, JSON.stringify(addresses, null, 2));
   console.log(`\nAddresses written to ${outputPath}`);
   console.log("Remember to also update frontend/src/contracts/addresses.js if these changed.");
+
+  // ── Optional: Transfer TherapistRegistry admin to Governance ──
+  // This makes the DAO the sole authority for approving therapists.
+  // Run this AFTER demo-seed.js so the seed script can still approve
+  // therapists directly using the deployer's admin role.
+  //
+  // Uncomment the next 3 lines to transfer admin immediately:
+  // const transferTx = await therapistRegistry.transferAdmin(await governance.getAddress());
+  // await transferTx.wait();
+  // console.log("TherapistRegistry admin transferred to MindChainGovernance");
 }
 
 main().catch((error) => {

@@ -7,6 +7,7 @@ import {
   RewardTokenABI,
   SessionEscrowABI,
   MindChainGovernanceABI,
+  AnonymousPatientRegistryABI,
 } from "../contracts/abis";
 
 const ABIS = {
@@ -15,6 +16,7 @@ const ABIS = {
   RewardToken: RewardTokenABI,
   SessionEscrow: SessionEscrowABI,
   MindChainGovernance: MindChainGovernanceABI,
+  AnonymousPatientRegistry: AnonymousPatientRegistryABI,
 };
 
 /**

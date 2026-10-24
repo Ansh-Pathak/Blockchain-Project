@@ -16,13 +16,18 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
  *     -> Therapist (now a token holder) creates a DAO proposal
  *     -> Patient and therapist vote
  *     -> Voting period ends, proposal is finalized
+ *     -> [NEW] Admin transfers TherapistRegistry admin to Governance
+ *     -> [NEW] A second therapist applies
+ *     -> [NEW] An executable proposal is created to approve the 2nd therapist
+ *     -> [NEW] DAO votes, finalizes, and executes the proposal
+ *     -> [NEW] Second therapist is now approved by DAO vote, not admin!
  *
  * If this test passes, it's strong evidence the whole system actually works
  * together, not just each piece in isolation.
  */
 describe("MindChain DAO — end-to-end lifecycle", function () {
-  it("plays out a full patient -> therapist -> session -> governance flow", async function () {
-    const [admin, patient, therapist] = await ethers.getSigners();
+  it("plays out a full patient -> therapist -> session -> governance -> DAO execution flow", async function () {
+    const [admin, patient, therapist, therapist2] = await ethers.getSigners();
 
     // --- Deploy all 5 contracts, wired together exactly like deploy-all.js ---
     const TherapistRegistry = await ethers.getContractFactory("TherapistRegistry");
@@ -78,7 +83,7 @@ describe("MindChain DAO — end-to-end lifecycle", function () {
     expect(await rewardToken.balanceOf(therapist.address)).to.equal(ethers.parseEther("10"));
     expect(await ethers.provider.getBalance(escrowAddress)).to.equal(0);
 
-    // --- Step 5: Therapist, now a MIND token holder, creates a DAO proposal (Day 4 module) ---
+    // --- Step 5: Therapist, now a MIND token holder, creates a simple DAO proposal (Day 4 module) ---
     await governance.connect(therapist).createProposal("Reduce standard session fee to encourage more bookings");
     const proposal = await governance.proposals(0);
     expect(proposal.proposer).to.equal(therapist.address);
@@ -99,5 +104,44 @@ describe("MindChain DAO — end-to-end lifecycle", function () {
     const finalProposal = await governance.proposals(0);
     expect(finalProposal.state).to.equal(1); // 1 = Passed (therapist's 10 MIND tokens voted for, 0 against)
     expect(finalProposal.votesFor).to.equal(ethers.parseEther("10"));
+
+    // --- Step 8 [NEW]: Admin transfers TherapistRegistry admin to Governance ---
+    await therapistRegistry.connect(admin).transferAdmin(await governance.getAddress());
+    expect(await therapistRegistry.admin()).to.equal(await governance.getAddress());
+
+    // Admin can no longer directly approve therapists
+    const cred2 = ethers.keccak256(ethers.toUtf8Bytes("license-therapist-2"));
+    await therapistRegistry.connect(therapist2).applyAsTherapist(cred2);
+    await expect(therapistRegistry.connect(admin).approveTherapist(therapist2.address))
+      .to.be.revertedWith("TherapistRegistry: caller is not admin");
+
+    // --- Step 9 [NEW]: Create executable proposal to approve therapist2 via DAO ---
+    const callData = therapistRegistry.interface.encodeFunctionData(
+      "approveTherapist", [therapist2.address]
+    );
+    await governance.connect(therapist).createExecutableProposal(
+      "Approve therapist2 as a verified therapist",
+      await therapistRegistry.getAddress(),
+      callData
+    );
+
+    // --- Step 10 [NEW]: DAO votes and finalizes ---
+    await governance.connect(therapist).vote(1, true); // proposal ID 1
+    await time.increase(3 * 24 * 60 * 60 + 1);
+    await governance.finalizeProposal(1);
+
+    const execProposal = await governance.proposals(1);
+    expect(execProposal.state).to.equal(1); // 1 = Passed
+
+    // --- Step 11 [NEW]: Execute the proposal — DAO auto-approves the therapist ---
+    await expect(governance.executeProposal(1))
+      .to.emit(governance, "ProposalExecuted");
+
+    // Verify: therapist2 is now approved by DAO vote!
+    expect(await therapistRegistry.isApprovedTherapist(therapist2.address)).to.equal(true);
+
+    const executedProposal = await governance.proposals(1);
+    expect(executedProposal.state).to.equal(3); // 3 = Executed
   });
 });
+

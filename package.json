@@ -16,6 +16,10 @@
     "solc": "^0.8.24"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.6.1"
+    "@openzeppelin/contracts": "^5.6.1",
+    "@semaphore-protocol/contracts": "^4.14.3",
+    "@semaphore-protocol/group": "^4.14.3",
+    "@semaphore-protocol/identity": "^4.14.3",
+    "@semaphore-protocol/proof": "^4.14.3"
   }
 }

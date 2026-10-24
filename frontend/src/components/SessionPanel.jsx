@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { parseEther, formatEther } from "ethers";
 import { useContract } from "../contracts/useContract";
 
@@ -12,10 +12,51 @@ export function SessionPanel({ signer, address }) {
   const [status, setStatus] = useState("");
   const [isBooking, setIsBooking] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState(null);
+  const [timeoutDays, setTimeoutDays] = useState(null);
+  const [currentTime, setCurrentTime] = useState(() => Math.floor(Date.now() / 1000));
+
+  // Keep a periodic clock update for timeout checks
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    if (!contract || !address) return;
+    try {
+      const nextId = await contract.nextSessionId();
+      const all = [];
+      for (let i = 0; i < Number(nextId); i++) {
+        const s = await contract.sessions(i);
+        const session = {
+          id: i,
+          patient: s[0],
+          therapist: s[1],
+          amount: s[2],
+          status: s[3],
+          createdAt: s[4],
+        };
+        if (
+          session.patient.toLowerCase() === address.toLowerCase() ||
+          session.therapist.toLowerCase() === address.toLowerCase()
+        ) {
+          all.push(session);
+        }
+      }
+      setSessions(all);
+    } catch (err) {
+      console.error("Error refreshing sessions:", err);
+    }
+  }, [contract, address]);
 
   useEffect(() => {
     if (!contract) return;
     refreshSessions();
+
+    // Read the timeout constant once so we can show it in the UI.
+    contract.SESSION_TIMEOUT().then((t) => setTimeoutDays(Number(t) / 86400));
 
     // Any booking/completion/cancellation - by us or by whoever we're
     // paired with in the demo - refreshes the list live.
@@ -29,40 +70,7 @@ export function SessionPanel({ signer, address }) {
       contract.off("SessionCompleted", onChange);
       contract.off("SessionCancelled", onChange);
     };
-  }, [contract, address]);
-
-  // SessionEscrow doesn't keep a list of "my sessions" - just a counter and
-  // a mapping by ID. So the frontend loops through every session ID and
-  // filters for ones involving the connected wallet. Fine for a demo with a
-  // handful of sessions; a production app would use events + a backend index.
-  async function refreshSessions() {
-    const nextId = await contract.nextSessionId();
-    const all = [];
-    for (let i = 0; i < Number(nextId); i++) {
-      const s = await contract.sessions(i);
-      // NOTE: ethers v6 returns struct data as a "Result" - an array-like
-      // object with both numeric AND named keys. Spreading it directly
-      // (`{ ...s }`) is unreliable and caused a runtime crash during
-      // testing. Reading each field explicitly by tuple index (matching
-      // the struct's declaration order in SessionEscrow.sol: patient,
-      // therapist, amount, status, createdAt) is the safe, explicit way.
-      const session = {
-        id: i,
-        patient: s[0],
-        therapist: s[1],
-        amount: s[2],
-        status: s[3],
-        createdAt: s[4],
-      };
-      if (
-        session.patient.toLowerCase() === address?.toLowerCase() ||
-        session.therapist.toLowerCase() === address?.toLowerCase()
-      ) {
-        all.push(session);
-      }
-    }
-    setSessions(all);
-  }
+  }, [contract, refreshSessions]);
 
   async function handleBook() {
     if (!therapistAddress.trim()) return;
@@ -107,6 +115,41 @@ export function SessionPanel({ signer, address }) {
     }
   }
 
+  // ── Claim timeout: patient reclaims funds if therapist hasn't confirmed ──
+  async function handleClaimTimeout(id) {
+    setPendingSessionId(id);
+    setStatus(`Claiming timeout refund for session ${id}...`);
+    try {
+      const tx = await contract.claimTimeout(id);
+      await tx.wait();
+      setStatus(`Session ${id} timed out - funds refunded to patient`);
+    } catch (err) {
+      setStatus("Error: " + (err.reason || err.message));
+    } finally {
+      setPendingSessionId(null);
+    }
+  }
+
+  // Check if a session has exceeded the timeout period
+  function isTimedOut(session) {
+    if (!timeoutDays) return false;
+    const timeoutSeconds = timeoutDays * 86400;
+    return currentTime > Number(session.createdAt) + timeoutSeconds;
+  }
+
+  // Format how long until/since timeout for display
+  function formatTimeRemaining(session) {
+    if (!timeoutDays) return "";
+    const timeoutSeconds = timeoutDays * 86400;
+    const deadline = Number(session.createdAt) + timeoutSeconds;
+    const diff = deadline - currentTime;
+    if (diff <= 0) return "Timeout reached";
+    const days = Math.floor(diff / 86400);
+    const hours = Math.floor((diff % 86400) / 3600);
+    if (days > 0) return `${days}d ${hours}h until timeout`;
+    return `${hours}h until timeout`;
+  }
+
   return (
     <div className="panel">
       <h2>Sessions</h2>
@@ -134,24 +177,46 @@ export function SessionPanel({ signer, address }) {
       <ul>
         {sessions.map((s) => {
           const isThisPending = pendingSessionId === s.id;
+          const timedOut = isTimedOut(s);
+          const isPatient = s.patient.toLowerCase() === address?.toLowerCase();
+          const isTherapist = s.therapist.toLowerCase() === address?.toLowerCase();
           return (
             <li key={s.id}>
               #{s.id} — {formatEther(s.amount)} ETH — {STATUS_LABELS[Number(s.status)]}
+              {/* Show timeout info for Requested sessions */}
+              {Number(s.status) === 0 && (
+                <span className="timeout-info"> ({formatTimeRemaining(s)})</span>
+              )}
               {" "}
-              {Number(s.status) === 0 && s.therapist.toLowerCase() === address?.toLowerCase() && (
+              {/* Therapist confirm button */}
+              {Number(s.status) === 0 && isTherapist && (
                 <button disabled={isThisPending} onClick={() => handleConfirm(s.id)}>
                   {isThisPending ? "Confirming..." : "Confirm (I'm the therapist)"}
                 </button>
               )}
-              {Number(s.status) === 0 && s.patient.toLowerCase() === address?.toLowerCase() && (
+              {/* Patient cancel button — only before timeout */}
+              {Number(s.status) === 0 && isPatient && !timedOut && (
                 <button disabled={isThisPending} onClick={() => handleCancel(s.id)}>
                   {isThisPending ? "Cancelling..." : "Cancel (I'm the patient)"}
+                </button>
+              )}
+              {/* Patient claim timeout button — only after timeout */}
+              {Number(s.status) === 0 && isPatient && timedOut && (
+                <button disabled={isThisPending} onClick={() => handleClaimTimeout(s.id)}>
+                  {isThisPending ? "Claiming..." : "⏰ Claim Timeout Refund"}
                 </button>
               )}
             </li>
           );
         })}
       </ul>
+
+      {timeoutDays && (
+        <p className="hint">
+          Sessions have a {timeoutDays}-day timeout. If the therapist doesn't confirm
+          within {timeoutDays} days, the patient can reclaim their escrowed funds.
+        </p>
+      )}
 
       {status && <p className="status">{status}</p>}
     </div>

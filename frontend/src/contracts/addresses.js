@@ -7,6 +7,7 @@ export const CONTRACT_ADDRESSES = {
   RewardToken: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
   SessionEscrow: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
   MindChainGovernance: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+  AnonymousPatientRegistry: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
 };
 
 // The network the frontend expects MetaMask to be connected to.

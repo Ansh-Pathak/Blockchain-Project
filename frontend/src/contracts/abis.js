@@ -147,6 +147,25 @@ export const TherapistRegistryABI = [
       {
         "indexed": true,
         "internalType": "address",
+        "name": "previousAdmin",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newAdmin",
+        "type": "address"
+      }
+    ],
+    "name": "AdminTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "therapist",
         "type": "address"
       },
@@ -302,6 +321,19 @@ export const TherapistRegistryABI = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newAdmin",
+        "type": "address"
+      }
+    ],
+    "name": "transferAdmin",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   }
 ];
@@ -777,6 +809,11 @@ export const SessionEscrowABI = [
     "type": "constructor"
   },
   {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
     "anonymous": false,
     "inputs": [
       {
@@ -853,6 +890,19 @@ export const SessionEscrowABI = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "SESSION_TIMEOUT",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -880,6 +930,19 @@ export const SessionEscrowABI = [
       }
     ],
     "name": "cancelSession",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "sessionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "claimTimeout",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1030,6 +1093,31 @@ export const MindChainGovernanceABI = [
         "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "callData",
+        "type": "bytes"
+      }
+    ],
+    "name": "ProposalExecuted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      },
+      {
         "indexed": false,
         "internalType": "enum MindChainGovernance.ProposalState",
         "name": "state",
@@ -1101,6 +1189,35 @@ export const MindChainGovernanceABI = [
         "internalType": "string",
         "name": "description",
         "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "callData",
+        "type": "bytes"
+      }
+    ],
+    "name": "createExecutableProposal",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "description",
+        "type": "string"
       }
     ],
     "name": "createProposal",
@@ -1111,6 +1228,19 @@ export const MindChainGovernanceABI = [
         "type": "uint256"
       }
     ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "proposalId",
+        "type": "uint256"
+      }
+    ],
+    "name": "executeProposal",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -1203,6 +1333,21 @@ export const MindChainGovernanceABI = [
         "internalType": "enum MindChainGovernance.ProposalState",
         "name": "state",
         "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "callData",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bool",
+        "name": "executed",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -1232,6 +1377,241 @@ export const MindChainGovernanceABI = [
     "outputs": [
       {
         "internalType": "contract IVotingToken",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+export const AnonymousPatientRegistryABI = [
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "semaphoreAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "patientRegistryAddress",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nullifierHash",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "AnonymousJournalLogged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "patient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "identityCommitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "PatientJoinedGroup",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "anonymousJournalHashes",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getAnonymousJournalCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAnonymousJournalHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "hasJoinedGroup",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "identityCommitment",
+        "type": "uint256"
+      }
+    ],
+    "name": "joinAnonymousGroup",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "merkleTreeDepth",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "merkleTreeRoot",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nullifier",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "message",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "scope",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256[8]",
+            "name": "points",
+            "type": "uint256[8]"
+          }
+        ],
+        "internalType": "struct ISemaphore.SemaphoreProof",
+        "name": "proof",
+        "type": "tuple"
+      }
+    ],
+    "name": "logAnonymousJournal",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "patientGroupId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "patientRegistry",
+    "outputs": [
+      {
+        "internalType": "contract IPatientRegistry",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "semaphore",
+    "outputs": [
+      {
+        "internalType": "contract ISemaphore",
         "name": "",
         "type": "address"
       }

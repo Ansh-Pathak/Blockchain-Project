@@ -22,6 +22,8 @@ describe("MindChainGovernance", function () {
     return { token, governance, admin, voterA, voterB, noTokens };
   }
 
+  // ── Existing proposal / vote / finalize tests ──
+
   it("requires holding tokens to create a proposal", async function () {
     const { governance, noTokens } = await deployFixture();
     await expect(governance.connect(noTokens).createProposal("Increase session reward"))
@@ -112,4 +114,143 @@ describe("MindChainGovernance", function () {
     await expect(governance.connect(voterA).vote(0, true))
       .to.be.revertedWith("Governance: voting period has ended");
   });
+
+  // ── New: Executable Proposal tests ──
+
+  describe("executable proposals", function () {
+    async function deployWithTherapistRegistry() {
+      const { token, governance, admin, voterA, voterB, noTokens } = await deployFixture();
+
+      // Deploy a TherapistRegistry that governance can call into
+      const TherapistRegistry = await ethers.getContractFactory("TherapistRegistry");
+      const therapistRegistry = await TherapistRegistry.connect(admin).deploy();
+      await therapistRegistry.waitForDeployment();
+
+      return { token, governance, therapistRegistry, admin, voterA, voterB, noTokens };
+    }
+
+    it("lets a token holder create an executable proposal", async function () {
+      const { governance, therapistRegistry, voterA } = await deployWithTherapistRegistry();
+
+      const callData = therapistRegistry.interface.encodeFunctionData(
+        "approveTherapist", [voterA.address]
+      );
+
+      await expect(
+        governance.connect(voterA).createExecutableProposal(
+          "Approve voterA as therapist",
+          await therapistRegistry.getAddress(),
+          callData
+        )
+      ).to.emit(governance, "ProposalCreated");
+    });
+
+    it("rejects executable proposal with zero target address", async function () {
+      const { governance, voterA } = await deployWithTherapistRegistry();
+
+      await expect(
+        governance.connect(voterA).createExecutableProposal(
+          "Bad proposal",
+          ethers.ZeroAddress,
+          "0x"
+        )
+      ).to.be.revertedWith("Governance: target cannot be zero address");
+    });
+
+    it("executes a passed executable proposal successfully", async function () {
+      const { governance, therapistRegistry, admin, voterA, voterB } = await deployWithTherapistRegistry();
+
+      // voterB applies as a therapist
+      const credHash = ethers.keccak256(ethers.toUtf8Bytes("license-xyz"));
+      await therapistRegistry.connect(voterB).applyAsTherapist(credHash);
+
+      // Transfer TherapistRegistry admin to the Governance contract
+      await therapistRegistry.connect(admin).transferAdmin(await governance.getAddress());
+
+      // Create executable proposal to approve voterB
+      const callData = therapistRegistry.interface.encodeFunctionData(
+        "approveTherapist", [voterB.address]
+      );
+      await governance.connect(voterA).createExecutableProposal(
+        "Approve voterB as therapist via DAO vote",
+        await therapistRegistry.getAddress(),
+        callData
+      );
+
+      // Vote + finalize
+      await governance.connect(voterA).vote(0, true);  // 10 MIND for
+      await time.increase(3 * 24 * 60 * 60 + 1);
+      await governance.finalizeProposal(0);
+
+      // Execute
+      await expect(governance.executeProposal(0))
+        .to.emit(governance, "ProposalExecuted");
+
+      // Verify the therapist was actually approved
+      expect(await therapistRegistry.isApprovedTherapist(voterB.address)).to.equal(true);
+
+      // Verify the proposal is in Executed state
+      const proposal = await governance.proposals(0);
+      expect(proposal.state).to.equal(3); // 3 = Executed
+    });
+
+    it("prevents double-execution of a proposal", async function () {
+      const { governance, therapistRegistry, admin, voterA, voterB } = await deployWithTherapistRegistry();
+
+      const credHash = ethers.keccak256(ethers.toUtf8Bytes("license-abc"));
+      await therapistRegistry.connect(voterB).applyAsTherapist(credHash);
+      await therapistRegistry.connect(admin).transferAdmin(await governance.getAddress());
+
+      const callData = therapistRegistry.interface.encodeFunctionData(
+        "approveTherapist", [voterB.address]
+      );
+      await governance.connect(voterA).createExecutableProposal(
+        "Approve voterB",
+        await therapistRegistry.getAddress(),
+        callData
+      );
+
+      await governance.connect(voterA).vote(0, true);
+      await time.increase(3 * 24 * 60 * 60 + 1);
+      await governance.finalizeProposal(0);
+      await governance.executeProposal(0);
+
+      await expect(governance.executeProposal(0))
+        .to.be.revertedWith("Governance: proposal not in Passed state");
+    });
+
+    it("rejects execution of a failed proposal", async function () {
+      const { governance, therapistRegistry, voterA, voterB } = await deployWithTherapistRegistry();
+
+      const callData = therapistRegistry.interface.encodeFunctionData(
+        "approveTherapist", [voterB.address]
+      );
+      await governance.connect(voterA).createExecutableProposal(
+        "Approve voterB",
+        await therapistRegistry.getAddress(),
+        callData
+      );
+
+      await governance.connect(voterA).vote(0, false); // vote against
+      await time.increase(3 * 24 * 60 * 60 + 1);
+      await governance.finalizeProposal(0);
+
+      await expect(governance.executeProposal(0))
+        .to.be.revertedWith("Governance: proposal not in Passed state");
+    });
+
+    it("rejects execution of a non-executable (simple) proposal", async function () {
+      const { governance, voterA } = await deployWithTherapistRegistry();
+
+      // Create a simple proposal with no target
+      await governance.connect(voterA).createProposal("Just a discussion");
+      await governance.connect(voterA).vote(0, true);
+      await time.increase(3 * 24 * 60 * 60 + 1);
+      await governance.finalizeProposal(0);
+
+      await expect(governance.executeProposal(0))
+        .to.be.revertedWith("Governance: proposal has no execution target");
+    });
+  });
 });
+

@@ -81,4 +81,17 @@ contract TherapistRegistry {
     function isApprovedTherapist(address therapistAddr) external view returns (bool) {
         return therapists[therapistAddr].status == Status.Approved;
     }
+
+    /// @notice Transfer the admin role to a new address. This is used to hand
+    /// off control to the Governance contract after deployment, so that
+    /// therapist approvals are handled by DAO vote instead of a single admin.
+    /// @param newAdmin The address of the new admin (typically the Governance contract).
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        require(newAdmin != address(0), "TherapistRegistry: new admin cannot be zero address");
+        emit AdminTransferred(admin, newAdmin);
+        admin = newAdmin;
+    }
+
+    event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 }
+

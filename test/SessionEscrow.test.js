@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("SessionEscrow", function () {
   async function deployFixture() {
@@ -104,4 +105,65 @@ describe("SessionEscrow", function () {
     await expect(escrow.connect(therapist).confirmSession(0))
       .to.be.revertedWith("SessionEscrow: session not in requested state");
   });
+
+  // ── New: claimTimeout tests ──
+
+  describe("claimTimeout", function () {
+    it("exposes a SESSION_TIMEOUT constant of 7 days", async function () {
+      const { escrow } = await deployFixture();
+      const timeout = await escrow.SESSION_TIMEOUT();
+      expect(timeout).to.equal(7 * 24 * 60 * 60); // 604800 seconds
+    });
+
+    it("rejects claimTimeout before the timeout period has elapsed", async function () {
+      const { escrow, patient, therapist } = await deployFixture();
+      await escrow.connect(patient).bookSession(therapist.address, { value: sessionFee });
+
+      // Try immediately — should fail
+      await expect(escrow.connect(patient).claimTimeout(0))
+        .to.be.revertedWith("SessionEscrow: timeout period not yet reached");
+
+      // Try after 6 days — still should fail
+      await time.increase(6 * 24 * 60 * 60);
+      await expect(escrow.connect(patient).claimTimeout(0))
+        .to.be.revertedWith("SessionEscrow: timeout period not yet reached");
+    });
+
+    it("lets the patient reclaim funds after the timeout period", async function () {
+      const { escrow, patient, therapist } = await deployFixture();
+      await escrow.connect(patient).bookSession(therapist.address, { value: sessionFee });
+
+      // Fast-forward past the 7-day timeout
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(escrow.connect(patient).claimTimeout(0))
+        .to.emit(escrow, "SessionCancelled")
+        .withArgs(0);
+
+      // Escrow should be empty after refund
+      expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0);
+    });
+
+    it("rejects claimTimeout from a non-patient wallet", async function () {
+      const { escrow, patient, therapist } = await deployFixture();
+      await escrow.connect(patient).bookSession(therapist.address, { value: sessionFee });
+
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(escrow.connect(therapist).claimTimeout(0))
+        .to.be.revertedWith("SessionEscrow: only the booking patient can claim timeout");
+    });
+
+    it("rejects claimTimeout on an already-completed session", async function () {
+      const { escrow, patient, therapist } = await deployFixture();
+      await escrow.connect(patient).bookSession(therapist.address, { value: sessionFee });
+      await escrow.connect(therapist).confirmSession(0);
+
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(escrow.connect(patient).claimTimeout(0))
+        .to.be.revertedWith("SessionEscrow: session not in requested state");
+    });
+  });
 });
+

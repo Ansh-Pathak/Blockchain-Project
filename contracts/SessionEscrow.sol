@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 /// @dev Minimal interfaces for the two contracts SessionEscrow needs to talk
 /// to. We only declare the functions we actually use, rather than importing
 /// the whole contract - this keeps compilation lighter and makes the
@@ -18,12 +20,13 @@ interface IRewardToken {
 /// a session fee which is held in this contract (escrow) rather than sent
 /// directly to the therapist. Funds are only released once the session is
 /// confirmed complete, and the therapist is rewarded with RewardToken at
-/// the same time.
-contract SessionEscrow {
+/// the same time. If the therapist doesn't confirm within SESSION_TIMEOUT,
+/// the patient can reclaim their payment via claimTimeout().
+contract SessionEscrow is ReentrancyGuard {
     enum SessionStatus {
         Requested,  // patient paid, waiting for therapist to confirm completion
         Completed,  // therapist confirmed, funds + reward released
-        Cancelled   // patient cancelled before completion, refunded
+        Cancelled   // patient cancelled before completion, or timed out
     }
 
     struct Session {
@@ -38,6 +41,10 @@ contract SessionEscrow {
     /// 10 * 10^18 = 10 whole MIND tokens (ERC20 amounts are stored in the
     /// smallest unit, same idea as cents for dollars, but with 18 decimals).
     uint256 public constant REWARD_PER_SESSION = 10 * 10 ** 18;
+
+    /// @notice How long a therapist has to confirm a session before the patient
+    /// can reclaim their escrowed funds via claimTimeout().
+    uint256 public constant SESSION_TIMEOUT = 7 days;
 
     ITherapistRegistry public immutable therapistRegistry;
     IRewardToken public immutable rewardToken;
@@ -75,7 +82,7 @@ contract SessionEscrow {
 
     /// @notice Called by the therapist to confirm a session took place.
     /// Releases the escrowed payment to the therapist and mints their reward tokens.
-    function confirmSession(uint256 sessionId) external {
+    function confirmSession(uint256 sessionId) external nonReentrant {
         Session storage session = sessions[sessionId];
         require(session.status == SessionStatus.Requested, "SessionEscrow: session not in requested state");
         require(msg.sender == session.therapist, "SessionEscrow: only the assigned therapist can confirm");
@@ -92,7 +99,7 @@ contract SessionEscrow {
 
     /// @notice Called by the patient to cancel a session before it's
     /// completed, refunding their payment in full.
-    function cancelSession(uint256 sessionId) external {
+    function cancelSession(uint256 sessionId) external nonReentrant {
         Session storage session = sessions[sessionId];
         require(session.status == SessionStatus.Requested, "SessionEscrow: session not in requested state");
         require(msg.sender == session.patient, "SessionEscrow: only the booking patient can cancel");
@@ -104,4 +111,25 @@ contract SessionEscrow {
 
         emit SessionCancelled(sessionId);
     }
+
+    /// @notice If a therapist hasn't confirmed within SESSION_TIMEOUT (7 days),
+    /// the patient can reclaim their escrowed funds. This protects patients
+    /// from having funds locked indefinitely if a therapist goes unresponsive.
+    function claimTimeout(uint256 sessionId) external nonReentrant {
+        Session storage session = sessions[sessionId];
+        require(session.status == SessionStatus.Requested, "SessionEscrow: session not in requested state");
+        require(msg.sender == session.patient, "SessionEscrow: only the booking patient can claim timeout");
+        require(
+            block.timestamp > session.createdAt + SESSION_TIMEOUT,
+            "SessionEscrow: timeout period not yet reached"
+        );
+
+        session.status = SessionStatus.Cancelled;
+
+        (bool sent, ) = payable(session.patient).call{value: session.amount}("");
+        require(sent, "SessionEscrow: refund transfer failed");
+
+        emit SessionCancelled(sessionId);
+    }
 }
+

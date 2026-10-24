@@ -62,6 +62,14 @@ async function main() {
   await (await governance.connect(therapist).vote(0, true)).wait();
   console.log("DAO proposal #0 created and voted on by the therapist.");
 
+  // ── Phase 2: Transfer TherapistRegistry admin to Governance ──
+  // Now that demo seeding is done (therapist was approved above using the
+  // deployer's admin role), we hand off admin to the Governance contract.
+  // From this point on, new therapist approvals must go through a DAO vote
+  // (createExecutableProposal → vote → finalize → executeProposal).
+  await (await therapistRegistry.connect(admin).transferAdmin(CONTRACT_ADDRESSES.MindChainGovernance)).wait();
+  console.log("TherapistRegistry admin transferred to MindChainGovernance:", CONTRACT_ADDRESSES.MindChainGovernance);
+
   console.log("\nDemo data seeded successfully. Start the frontend with `npm run dev` in the frontend/ folder.");
 }
 
