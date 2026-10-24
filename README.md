@@ -82,13 +82,3 @@ Deploy to Sepolia testnet:
 ```bash
 npx hardhat run scripts/deploy.js --network sepolia
 ```
-
-## Project timeline
-
-- **Day 1:** Environment + network setup ✅
-- **Day 2:** Patient & Therapist registry contracts
-- **Day 3:** Session escrow + reward token contracts
-- **Day 4:** DAO governance contract + Sepolia deployment
-- **Day 5:** Frontend skeleton + wallet connect
-- **Day 6:** Frontend write functions + end-to-end demo flow
-- **Day 7:** Documentation, cleanup, demo prep
