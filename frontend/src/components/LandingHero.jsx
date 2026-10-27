@@ -1,4 +1,15 @@
-export function LandingHero({ onConnect, error }) {
+import { useState } from "react";
+import { PRESET_ACCOUNTS } from "../hooks/useWallet";
+
+export function LandingHero({ onConnect, onConnectWithAddress, error }) {
+  const [pastedAddress, setPastedAddress] = useState("");
+
+  const handleDirectConnect = () => {
+    if (pastedAddress.trim()) {
+      onConnectWithAddress(pastedAddress.trim());
+    }
+  };
+
   return (
     <div className="landing-hero">
       <div className="hero-badge">
@@ -15,13 +26,62 @@ export function LandingHero({ onConnect, error }) {
         escrow-backed therapy sessions, and decentralized community governance.
       </p>
 
-      <div className="hero-cta">
-        <button type="button" className="hero-connect-btn" onClick={onConnect}>
-          Connect MetaMask Wallet 🦊
-        </button>
-        <span className="hero-subtext">
-          No sign-ups or institutional accounts required. Your wallet is your identity.
-        </span>
+      {/* Connection Container: MetaMask + Direct Address Paste */}
+      <div className="hero-connect-card">
+        <div className="hero-cta">
+          <button type="button" className="hero-connect-btn" onClick={onConnect}>
+            Connect MetaMask Wallet 🦊
+          </button>
+          <span className="hero-subtext">
+            Standard Web3 browser connection via MetaMask.
+          </span>
+        </div>
+
+        <div className="hero-divider">
+          <span>OR CONNECT INSTANTLY BY ADDRESS</span>
+        </div>
+
+        <div className="address-connect-box">
+          <p className="address-connect-desc">
+            No MetaMask extension required! Paste any wallet address below or click a pre-seeded demo role to jump in:
+          </p>
+
+          <div className="address-input-row">
+            <input
+              type="text"
+              className="address-input"
+              placeholder="Paste wallet address (0x...)"
+              value={pastedAddress}
+              onChange={(e) => setPastedAddress(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleDirectConnect()}
+            />
+            <button
+              type="button"
+              className="btn-address-connect"
+              onClick={handleDirectConnect}
+            >
+              Connect Address
+            </button>
+          </div>
+
+          <div className="hero-presets">
+            <span className="preset-label">1-Click Demo Accounts:</span>
+            <div className="preset-buttons">
+              {PRESET_ACCOUNTS.map((acc) => (
+                <button
+                  key={acc.role}
+                  type="button"
+                  className="preset-btn"
+                  onClick={() => onConnectWithAddress(acc.address)}
+                  title={acc.description}
+                >
+                  <span className="preset-role">{acc.label}</span>
+                  <span className="preset-addr">{acc.address.slice(0, 6)}...{acc.address.slice(-4)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {error && <div className="error hero-error">{error}</div>}

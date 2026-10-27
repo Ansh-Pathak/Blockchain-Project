@@ -168,8 +168,6 @@ npm run dev
 ```bash
 npx hardhat run scripts/deploy-all.js --network sepolia
 ```
-<<<<<<< HEAD
-=======
 
 ## Scripts
 
@@ -201,4 +199,4 @@ This is a development/demo project. Known limitations for production use:
 ## License
 
 MIT
->>>>>>>
+

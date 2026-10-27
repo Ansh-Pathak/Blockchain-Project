@@ -1,62 +1,158 @@
 import { useState, useCallback, useEffect } from "react";
-import { BrowserProvider } from "ethers";
+import { BrowserProvider, JsonRpcProvider, isAddress, getAddress } from "ethers";
 import { EXPECTED_CHAIN_ID } from "../contracts/addresses";
 
 /**
- * useWallet - a custom React "hook".
- *
- * A hook is just a regular function whose name starts with "use" that lets
- * you reuse stateful logic across components. Here, it handles everything
- * related to connecting to MetaMask so App.jsx doesn't need to know the
- * details - it just calls `connect()` and reads `address`.
+ * Hardhat Localhost default demo accounts seeded with roles in demo-seed.js.
+ * Users can 1-click connect as any of these or paste any custom address.
+ */
+export const PRESET_ACCOUNTS = [
+  {
+    role: "Patient",
+    label: "👤 Patient (Demo)",
+    address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    description: "Registered patient with 2 logged journal entries and active session history",
+  },
+  {
+    role: "Therapist",
+    label: "🩺 Dr. Demo (Therapist)",
+    address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    description: "Approved therapist with earned MIND reward tokens and pending sessions",
+  },
+  {
+    role: "Admin",
+    label: "👑 Admin / Deployer",
+    address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    description: "Contract deployer with therapist verification authority and admin rights",
+  },
+];
+
+/**
+ * useWallet - Custom hook handling wallet connection.
+ * Supports both standard MetaMask (BrowserProvider) and direct address connection
+ * (JsonRpcProvider) so users can test, demo, and take screenshots by simply
+ * copy-pasting any wallet address.
  */
 export function useWallet() {
-  // useState gives us a piece of memory ("state") that persists between
-  // re-renders, plus a function to update it. When you call the setter
-  // (e.g. setAddress), React automatically re-renders any component that
-  // reads that state, which is how the UI updates itself.
   const [address, setAddress] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [provider, setProvider] = useState(null);
   const [error, setError] = useState(null);
+  const [connectionMode, setConnectionMode] = useState(null); // "metamask" | "direct" | null
 
+  // 1. Direct connect by copy-pasting any wallet address (uses local JSON-RPC)
+  const connectWithAddress = useCallback(async (customAddress) => {
+    setError(null);
+    if (!customAddress || !isAddress(customAddress.trim())) {
+      setError("Invalid Ethereum address. Please enter or paste a valid 42-character address starting with 0x.");
+      return false;
+    }
+
+    const cleanAddress = getAddress(customAddress.trim());
+
+    try {
+      // Connect to local Hardhat node
+      const jsonRpcProvider = new JsonRpcProvider("http://127.0.0.1:8545");
+      const network = await jsonRpcProvider.getNetwork();
+      setChainId(Number(network.chainId));
+
+      // Attempt to impersonate the account in Hardhat node so it can sign transactions without MetaMask
+      try {
+        await jsonRpcProvider.send("hardhat_impersonateAccount", [cleanAddress]);
+      } catch {
+        // Ignored if account is already unlocked by default
+      }
+
+      setProvider(jsonRpcProvider);
+      setAddress(cleanAddress);
+      setConnectionMode("direct");
+      sessionStorage.setItem("mindchain_direct_address", cleanAddress);
+      return true;
+    } catch (err) {
+      console.error("Direct connection error:", err);
+      setError(
+        `Could not connect to local blockchain at http://127.0.0.1:8545 (${err.message}). Please ensure 'npx hardhat node' is running in your terminal.`
+      );
+      return false;
+    }
+  }, []);
+
+  // 2. Standard MetaMask browser connection
   const connect = useCallback(async () => {
     setError(null);
 
     if (!window.ethereum) {
-      setError("MetaMask not found. Please install the MetaMask browser extension.");
+      setError("MetaMask not found. You can still connect instantly by pasting any address below!");
       return;
     }
 
     try {
-      // BrowserProvider wraps MetaMask so ethers.js can talk to it.
       const browserProvider = new BrowserProvider(window.ethereum);
-
-      // This triggers the MetaMask popup asking the user to approve connecting.
       const accounts = await browserProvider.send("eth_requestAccounts", []);
       const network = await browserProvider.getNetwork();
 
+      sessionStorage.removeItem("mindchain_direct_address");
       setProvider(browserProvider);
       setAddress(accounts[0]);
       setChainId(Number(network.chainId));
+      setConnectionMode("metamask");
     } catch (err) {
       setError(err.message || "Failed to connect wallet");
     }
   }, []);
 
-  // useEffect runs side effects - code that reaches outside of React, like
-  // subscribing to browser/MetaMask events. The empty array [] at the end
-  // means "only run this once, when the component first mounts."
+  // 3. Disconnect active account
+  const disconnect = useCallback(() => {
+    setAddress(null);
+    setProvider(null);
+    setChainId(null);
+    setConnectionMode(null);
+    sessionStorage.removeItem("mindchain_direct_address");
+  }, []);
+
+  // Restore saved direct connection if browser was refreshed
+  useEffect(() => {
+    let cancelled = false;
+    const saved = sessionStorage.getItem("mindchain_direct_address");
+    if (saved && isAddress(saved) && !address) {
+      (async () => {
+        try {
+          const jsonRpcProvider = new JsonRpcProvider("http://127.0.0.1:8545");
+          const net = await jsonRpcProvider.getNetwork();
+          if (cancelled) return;
+          try {
+            await jsonRpcProvider.send("hardhat_impersonateAccount", [saved]);
+          } catch {
+            // Ignored if unsupported
+          }
+          if (cancelled) return;
+          setChainId(Number(net.chainId));
+          setProvider(jsonRpcProvider);
+          setAddress(saved);
+          setConnectionMode("direct");
+        } catch {
+          // Node may not be running yet upon initial load
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
+  // MetaMask event listeners (only active if connected via MetaMask)
   useEffect(() => {
     if (!window.ethereum) return;
 
-    // If the user switches accounts or networks in MetaMask itself, these
-    // event listeners keep our React state in sync automatically.
     const handleAccountsChanged = (accounts) => {
-      setAddress(accounts.length > 0 ? accounts[0] : null);
+      if (connectionMode === "metamask") {
+        setAddress(accounts.length > 0 ? accounts[0] : null);
+      }
     };
     const handleChainChanged = (newChainIdHex) => {
-      setChainId(parseInt(newChainIdHex, 16));
+      if (connectionMode === "metamask") {
+        setChainId(parseInt(newChainIdHex, 16));
+      }
     };
 
     window.ethereum.on("accountsChanged", handleAccountsChanged);
@@ -66,15 +162,10 @@ export function useWallet() {
       window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
       window.ethereum.removeListener("chainChanged", handleChainChanged);
     };
-  }, []);
+  }, [connectionMode]);
 
   const isWrongNetwork = chainId !== null && chainId !== EXPECTED_CHAIN_ID;
 
-  // Lets the user fix a wrong-network situation with one click instead of
-  // manually digging through MetaMask's network settings mid-demo.
-  // wallet_switchEthereumChain asks MetaMask to switch; if it doesn't know
-  // this network yet, MetaMask throws error code 4902, and we fall back to
-  // wallet_addEthereumChain to add it, then switch.
   const switchToExpectedNetwork = useCallback(async () => {
     if (!window.ethereum) return;
     const chainIdHex = "0x" + EXPECTED_CHAIN_ID.toString(16);
@@ -86,20 +177,44 @@ export function useWallet() {
       });
     } catch (switchError) {
       if (switchError.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [{
-            chainId: chainIdHex,
-            chainName: "Hardhat Local",
-            rpcUrls: ["http://127.0.0.1:8545"],
-            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-          }],
-        });
+        if (EXPECTED_CHAIN_ID === 11155111) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: "0xaa36a7",
+              chainName: "Sepolia Test Network",
+              rpcUrls: ["https://rpc.sepolia.org", "https://ethereum-sepolia-rpc.publicnode.com"],
+              nativeCurrency: { name: "SepoliaETH", symbol: "ETH", decimals: 18 },
+              blockExplorerUrls: ["https://sepolia.etherscan.io"],
+            }],
+          });
+        } else {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: chainIdHex,
+              chainName: "Hardhat Local",
+              rpcUrls: ["http://127.0.0.1:8545"],
+              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+            }],
+          });
+        }
       } else {
         setError(switchError.message || "Failed to switch network");
       }
     }
   }, []);
 
-  return { address, chainId, provider, error, connect, isWrongNetwork, switchToExpectedNetwork };
+  return {
+    address,
+    chainId,
+    provider,
+    error,
+    connect,
+    connectWithAddress,
+    disconnect,
+    connectionMode,
+    isWrongNetwork,
+    switchToExpectedNetwork,
+  };
 }
