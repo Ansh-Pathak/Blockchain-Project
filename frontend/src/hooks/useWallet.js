@@ -51,16 +51,22 @@ export function useWallet() {
     const cleanAddress = getAddress(customAddress.trim());
 
     try {
-      // Connect to local Hardhat node
-      const jsonRpcProvider = new JsonRpcProvider("http://127.0.0.1:8545");
+      const isSepolia = EXPECTED_CHAIN_ID === 11155111;
+      const rpcUrl = isSepolia
+        ? "https://ethereum-sepolia-rpc.publicnode.com"
+        : "http://127.0.0.1:8545";
+
+      const jsonRpcProvider = new JsonRpcProvider(rpcUrl);
       const network = await jsonRpcProvider.getNetwork();
       setChainId(Number(network.chainId));
 
-      // Attempt to impersonate the account in Hardhat node so it can sign transactions without MetaMask
-      try {
-        await jsonRpcProvider.send("hardhat_impersonateAccount", [cleanAddress]);
-      } catch {
-        // Ignored if account is already unlocked by default
+      if (!isSepolia) {
+        // Attempt to impersonate the account in Hardhat node for local testing
+        try {
+          await jsonRpcProvider.send("hardhat_impersonateAccount", [cleanAddress]);
+        } catch {
+          // Ignored if account is already unlocked by default
+        }
       }
 
       setProvider(jsonRpcProvider);
@@ -70,9 +76,10 @@ export function useWallet() {
       return true;
     } catch (err) {
       console.error("Direct connection error:", err);
-      setError(
-        `Could not connect to local blockchain at http://127.0.0.1:8545 (${err.message}). Please ensure 'npx hardhat node' is running in your terminal.`
-      );
+      const msg = EXPECTED_CHAIN_ID === 11155111
+        ? `Could not connect to Sepolia RPC (${err.message}). Please connect using MetaMask.`
+        : `Could not connect to local blockchain at http://127.0.0.1:8545 (${err.message}). Please ensure 'npx hardhat node' is running in your terminal.`;
+      setError(msg);
       return false;
     }
   }, []);
@@ -117,13 +124,19 @@ export function useWallet() {
     if (saved && isAddress(saved) && !address) {
       (async () => {
         try {
-          const jsonRpcProvider = new JsonRpcProvider("http://127.0.0.1:8545");
+          const isSepolia = EXPECTED_CHAIN_ID === 11155111;
+          const rpcUrl = isSepolia
+            ? "https://ethereum-sepolia-rpc.publicnode.com"
+            : "http://127.0.0.1:8545";
+          const jsonRpcProvider = new JsonRpcProvider(rpcUrl);
           const net = await jsonRpcProvider.getNetwork();
           if (cancelled) return;
-          try {
-            await jsonRpcProvider.send("hardhat_impersonateAccount", [saved]);
-          } catch {
-            // Ignored if unsupported
+          if (!isSepolia) {
+            try {
+              await jsonRpcProvider.send("hardhat_impersonateAccount", [saved]);
+            } catch {
+              // Ignored if unsupported
+            }
           }
           if (cancelled) return;
           setChainId(Number(net.chainId));
